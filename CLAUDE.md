@@ -28,6 +28,7 @@ node review/server.js          # http://127.0.0.1:5173
 |---|---|
 | `setup` | /setup、初始化專案(**非** /init) |
 | `ingest` | /ingest \<word\>、分析單字 |
+| `new-word` | /new-word \[N\]、用現有 morpheme 池嚴格組合生成 N 個新單字並寫入 dictionary(不遞回中間單字;N 預設 1) |
 | `stopword` | /stopword \<word\>、加白名單 |
 | `flashcard` | /flashcard …、加進複習庫 |
 | `review-word` | /review-word、開複習網頁 |

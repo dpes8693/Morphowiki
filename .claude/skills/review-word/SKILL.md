@@ -21,8 +21,16 @@ description: 啟動本地網頁(Node Express + 靜態前端,port 5173)讓使用�
 
 ## Step 1 — 檢查 review 子專案存在
 
-1. 確認 `review/package.json` 存在。若不存在,告知使用者複習子專案尚未建立,停止。
-2. 確認 `review/flashcards.json` 存在。若不存在,告知使用者尚無單字卡資料(請先用 flashcard 流程建立),停止。
+依序確認下列檔案存在,任何一個缺失就停下來,並告知使用者「請先跑 `/setup`」:
+
+1. `review/package.json`
+2. `review/flashcards.json`(若這個缺失,實際上是要先用 flashcard 流程建立第一張卡,告知使用者用 `/flashcard <word>`)
+3. `review/server.js`
+4. `review/web/index.html`
+5. `review/web/app.js`
+6. `review/web/style.css`
+
+**絕對不要動態生成 server.js 或 web/ 內任何檔案**。它們由 `/setup` 從 `.claude/skills/setup/templates/review/` 複製過來,是 source of truth。第一版曾經把生成工作留到這裡,結果首次 `/review-word` 要等 LLM 寫 ~900 行 code,體驗極差 — 這條規則就是用來防止那種情況重演。
 
 ## Step 2 — 安裝相依套件(必要時)
 
@@ -74,23 +82,19 @@ node review/server.js
 
 ---
 
-## 卡片 UI 規格(`review/web/`)
+## 卡片 UI 現況(`review/web/`)
 
-server 提供的靜態檔案在 `review/web/`,排版重點(供後續修改 / 重生時參考):
+server 提供的靜態檔案在 `review/web/`,**已實作於 `.claude/skills/setup/templates/review/web/`**(setup 時複製到 `review/web/`)。本節僅描述當前現況,**不是給 LLM 重新生成的規格**:
 
 - 卡片正面:只顯示單字本身 + 「翻牌」按鈕
 - 卡片背面:
-  - IPA / 詞性 / 中文釋義 — 一律展開,因為這些是核心識別資訊
-  - **拆解** — 一律展開(列表,字首 / 字根 / 字尾)
-  - **詞源** — **手風琴(預設折疊)**,用原生 `<details class="section accordion"><summary>詞源</summary>…</details>`
-  - **記憶法** — **手風琴(預設折疊)**,同上格式
+  - IPA / 詞性 / 中文釋義 — 一律展開
+  - **拆解** — 一律展開(列表;支援多個字首 / 字尾,連字號自動補上)
+  - **詞源** — 手風琴(預設折疊),原生 `<details class="section accordion">`
+  - **記憶法** — 手風琴(預設折疊),同上
   - 評分按鈕 Again / Hard / Good / Easy
 
-理由:詞源、記憶法資訊密度高,使用者多半在翻牌後先測自己有沒有印象,需要時才展開細節。預設折疊避免一翻牌就被細節淹沒。
-
-實作端要點:
-- 每次 `renderCard()` 必須把兩個 `<details>` 的 `.open` 重置為 `false`,避免上一張卡的展開狀態帶到下一張
-- 用 `<details>` 是因為原生支援、無 JS 切換邏輯、a11y 友善
+如需修改 UI / 拆解格式,**改 `.claude/skills/setup/templates/review/web/`(source of truth)後,同步覆寫 `review/web/` 或叫使用者重跑 `/setup`**。直接改 `review/web/` 的話,下次 `/setup` 不會覆蓋它(`cp -n`),但 source of truth 會 drift。
 
 ---
 
@@ -99,6 +103,7 @@ server 提供的靜態檔案在 `review/web/`,排版重點(供後續修改 / 重
 1. **不要前景執行 `node review/server.js`** — 否則對話會卡住。一定要 `run_in_background: true`。
 2. **不要主動執行 `npm install`** — 只有在 `review/node_modules/` 不存在時才裝;且要用 `npm install --prefix review`,不要 `cd review`。
 3. **絕對不要用 `cd review && <cmd>`** 形式 — Bash tool 的 cwd 會黏滯,第二次呼叫會失敗。用 `--prefix` 或 `node review/server.js` 這類不依賴 cwd 的寫法。
+4. **不要動態生成 `server.js` / `web/*.{html,js,css}`** — 缺檔請使用者跑 `/setup`。
 4. 不要動 `review/flashcards.json` 的內容(server 自己會寫)。
 5. 不要動 `dictionary/` 內容。
 6. 不要建立 `.claude/commands/` 任何檔案。

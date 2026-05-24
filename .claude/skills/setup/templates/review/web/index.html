@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>單字複習 · en-llm-wiki</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <h1>單字複習</h1>
+        <div id="progress" class="progress">載入中…</div>
+      </header>
+
+      <section id="loading" class="state">
+        <p>讀取今日到期單字…</p>
+      </section>
+
+      <section id="empty" class="state hidden">
+        <h2>今日複習完成 🎉</h2>
+        <p>沒有到期的單字卡。明天再回來吧。</p>
+      </section>
+
+      <section id="error" class="state hidden">
+        <h2>發生錯誤</h2>
+        <pre id="error-message"></pre>
+      </section>
+
+      <article id="card" class="card hidden">
+        <div class="word" id="card-word"></div>
+
+        <div id="front-actions" class="actions">
+          <button id="flip-btn" class="primary">翻牌</button>
+        </div>
+
+        <div id="back" class="back hidden">
+          <div class="row">
+            <span class="label">IPA</span>
+            <span id="card-ipa" class="value mono"></span>
+          </div>
+          <div class="row">
+            <span class="label">詞性</span>
+            <span id="card-pos" class="value"></span>
+          </div>
+          <div class="row">
+            <span class="label">中文釋義</span>
+            <span id="card-gloss" class="value"></span>
+          </div>
+
+          <div class="section">
+            <h3>拆解</h3>
+            <ul id="card-breakdown" class="breakdown"></ul>
+          </div>
+
+          <details class="section accordion" id="etymology-details">
+            <summary>詞源</summary>
+            <p id="card-etymology" class="paragraph"></p>
+          </details>
+
+          <details class="section accordion" id="mnemonic-details">
+            <summary>記憶法</summary>
+            <p id="card-mnemonic" class="paragraph"></p>
+          </details>
+
+          <div class="grade-actions">
+            <button class="grade again" data-grade="0">Again</button>
+            <button class="grade hard" data-grade="3">Hard</button>
+            <button class="grade good" data-grade="4">Good</button>
+            <button class="grade easy" data-grade="5">Easy</button>
+          </div>
+        </div>
+      </article>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
