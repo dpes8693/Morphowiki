@@ -50,6 +50,55 @@ suffixes: [{ stem: "al",    meaning: "形容詞字尾,表…的" }, { stem: "ion
 
 若三個池**任一**為空(完全沒檔案)→ 告知使用者並提出建議(先 ingest 幾個字累積)。
 
+## Step 2.5 — Morpheme 池防呆過濾(防 loanword 污染)
+
+避免**手動建立**或**歷史遺留**的不合理 morpheme 條目(例如有人手動把 `sushi`、`karaoke`、`tsunami` 等 loanword 放進 `dictionary/root/`)被 new-word 拿來組合出虛構派生詞(如 `sushify`、`unsushi`、`tsunamic`)。
+
+**設計原則**:可組合性的元資料**不放在 `dictionary/` 內任何 md**(避免技術欄位污染字典,老師讀不懂)。固化在 skill 自家領域:**`.claude/skills/new-word/morpheme-flags.md`**。
+
+### 1. 讀 morpheme-flags.md
+
+讀 `.claude/skills/new-word/morpheme-flags.md`,解析以下 section(每行 `- <stem>` 或裸字,stem 全小寫不含連字號):
+- `## blocked roots`、`## blocked prefixes`、`## blocked suffixes` — 永久排除清單
+- `## allowed roots`、`## allowed prefixes`、`## allowed suffixes` — 強制保留清單(self-check 想排除也保留)
+
+若檔案不存在,視為全空(不在這步建檔;Step 7 自動 append 時會 lazy 建檔)。
+
+### 2. 過濾優先序
+
+對 Step 2 池內每個條目,依下列**優先序**判定:
+
+| 條件 | 行為 |
+|---|---|
+| 出現在 `## blocked <type>s` | **排除**(信任明確標記) |
+| 出現在 `## allowed <type>s` | **保留**(信任明確標記,跳過 self-check) |
+| 未提及 + type = `prefix` 或 `suffix` | **保留**(這兩類池內條目少且穩定,風險低) |
+| 未提及 + type = `root` | 做 **root productivity self-check**(見下) |
+
+### 3. Root productivity self-check
+
+對每個未在 morpheme-flags.md 提及的 root,LLM 自問**兩條**:
+
+1. 這個 root 是否屬於**印歐語系構詞體系**(英語原生 / 拉丁 / 希臘根)?
+2. 在現代英語中,這個 root 是否能與其他 prefix / suffix **組合產生真實派生詞**?(LLM 須能舉出至少 1 個真實派生詞為證)
+
+- **兩條皆 yes** → 進候選池(視為可組合)。
+- **任一 no** → 排除,記入「跳過清單」;Step 7 會**自動 append 到 morpheme-flags.md 的 `## blocked <type>s`**,下次直接信任不再重判。
+
+典型應排除:`sushi`、`karaoke`、`tsunami`、`taco`、`yoga`、`kimono`、`zen`、`ninja`、`samurai` 等整字 loanword。
+
+典型應保留:
+- `nat` → nation、native、prenatal、innate
+- `form` → formation、reform、formal、deform
+- `believe` → believable、unbelievable、disbelief
+- `happy` → happily、unhappy、happiness
+
+**排除的條目不會被刪檔**(不動 dictionary 任何內容),只是 (a) 當次 /new-word 不採用、(b) Step 7 自動加入 morpheme-flags.md 永久固化。
+
+### 4. 過濾後池為空的處理
+
+若 Step 2.5 過濾後 **root 池為空** → 告知 user 並停止,提示:「現有 root 全被判定不可組合。請 (a) `/ingest <字>` 累積構詞性 root,或 (b) 編輯 `.claude/skills/new-word/morpheme-flags.md` 把某些 stem 從 `## blocked roots` 移到 `## allowed roots` 強制保留」。
+
 ## Step 3 — 讀黑名單
 
 1. 讀 `dictionary/stopwords.md`,解析 `## default` 與 `## custom`,組成 stopword set。
@@ -95,6 +144,18 @@ LLM 的工作:
 - `unhappy` — `happy` 不在 root 池
 - 隨機亂湊但不是真實英文字的拼合,如 `interbuild`、`naton`
 
+### 反例(教學示意):複合字尾陷阱
+
+說明嚴格策略最常見的失守模式 — LLM 為了湊「真實英文字」而引入池外 morpheme。以下示意:
+
+假設某 pool 不含 `dict` 也不含 `-ation`(suffix 池可能僅有 `-al`、`-ion` 等)。若 LLM 因為「dictation 是真實英文字」就選用它,並拆 `dict + -ation`,違規點如下:
+
+- `dict` 不在 root 池 → 違反嚴格策略。
+- `-ation` 不在 suffix 池 → 違反嚴格策略。
+- **即便語言學上 `-ation = -ate + -ion`,只要池中沒有 `-ation` 這個字面條目,就不可使用**;且即使 pool 同時有 `-ate` 與 `-ion`,也不能動態組裝出 `-ation`(morpheme stem 是字面比對)。
+
+正確處理:跳過 dictation,改試其他真的能用池內 morpheme 字面組合出的字;若所有候選都不行,寧可回報生成 0 個也不可違反嚴格策略。要新增 `-ation` 等複合字尾請走 `/ingest <某帶該字尾的字>` 讓字尾自然進池(且 ingest 偏好拆到最小單位,複合字尾通常不會直接進池)。
+
 ### 強制驗證 checklist
 
 對每個候選 `<w>`,寫進 dictionary 前 LLM 必須能逐一回答:
@@ -102,6 +163,7 @@ LLM 的工作:
 2. `<w>` 不在 stopwords?(是)
 3. `<w>` 不在 dictionary/words/?(是)
 4. 嚴格詞源學拆解 `<w>` 後,**所有** prefix stem、root stem、suffix stem 都在 Step 2 的池中?(是)
+5. 拆解後所有 morpheme 都在 **Step 2.5 過濾後的可組合池**內(沒踩到 morpheme-flags.md 的 `## blocked` 清單、且未被 root productivity self-check 排除)?(是)
 
 任一不符就丟掉,換下一個。
 
@@ -113,7 +175,7 @@ LLM 的工作:
 同 `ingest` skill Step 4 的拆解規則,**輸出 morpheme key**(prefix 是 `<stem>-`、suffix 是 `-<stem>`、root 是 `<stem>`)。
 
 ### 5b. 寫 `dictionary/words/<word>.md`
-同 `ingest` skill Step 5 的完整模板(frontmatter `word/pos/ipa/added`、正文「詞性/IPA/中文釋義」、`## 拆解`、`## 詞源`、`## 記憶法`)。
+同 `ingest` skill Step 5 的完整模板(frontmatter `word/pos/ipa/added`、正文「詞性/IPA/中文釋義」、`## 拆解`、`## 詞源`、`## 記憶法`、`## 筆記區`)。**`## 筆記區` 保留為空 section**(只有標題行),供 user 自行填寫,不要自作主張寫入內容。
 - 詞性用縮寫(`n. v. vt. vi. adj. adv. prep. conj. pron. det. art. interj. aux. num.`)。
 - 拆解行用新規則:`- 字首: [[../prefix/<key>]] \`<key>\` — <meaning>` 之類(`<key>` 帶連字號);**舊檔(無連字號)優先**沿用舊路徑,規則見 ingest skill Step 4「向後相容」一節。
 
@@ -157,7 +219,12 @@ morpheme 池都是既有的,所以 `## Prefix` / `## Root` / `## Suffix` section
    ```
    <word> — <一句 zh-TW 釋義> [prefix=<m1>,<m2>, root=<m3>, suffix=<m4>,<m5>]
    ```
-4. 下一步建議:`/flashcard <word>` 把這些字加進複習庫,或 `/review-word` 開始複習。
+4. **Morpheme 池過濾結果**(若 Step 2.5 有透過 self-check 跳過任何條目):
+   - 列出被排除的 morpheme(僅本次 self-check 新排除的,已在 `## blocked` 內的條目不重複報告),例:`已跳過 root sushi (疑似 loanword,無真實英語派生詞)`。
+   - **skill 自動 append 到 `.claude/skills/new-word/morpheme-flags.md`** 對應 `## blocked <type>s` section(若檔案不存在則先依本 skill base 模板建檔)。下次 /new-word 直接信任、不再 self-check。
+   - 告知 user:「若不認同某項排除,請編輯 `.claude/skills/new-word/morpheme-flags.md`,把該 stem 從 `## blocked <type>s` 移到 `## allowed <type>s`(強制保留)」。
+   - **dictionary/ 內任何 md 都不會被新增技術欄位**(這是有意的設計,維持字典對老師可讀)。
+5. 下一步建議:`/flashcard <word>` 把這些字加進複習庫,或 `/review-word` 開始複習。
 
 ---
 
@@ -171,3 +238,5 @@ morpheme 池都是既有的,所以 `## Prefix` / `## Root` / `## Suffix` section
 6. 中文一律 zh-TW;詞性用縮寫。
 7. **以 frontmatter 的 `morpheme:` 為 stem** — 不要從檔名推測(新舊規則檔名可能不一致)。
 8. 不要建立 `.claude/commands/`、不要動 stopwords.md。
+9. **morpheme stem 是字面比對,不可動態組裝複合字尾**。即使語言學上 `-ation = -ate + -ion`、`-tional = -tion + -al`、`-ically = -ic + -al + -ly`,若池中沒有 `-ation` 字面條目就不可使用 `-ation`。要新增複合字尾請走 `/ingest <字>`,讓該字尾自然進池(且 ingest 偏好拆到最小單位,複合字尾通常不會直接進池)。
+10. **Loanword / 非構詞性 morpheme 防呆**:Step 2.5 對手動建立或歷史遺留的可疑 morpheme(尤其 root)做 productivity self-check 並排除,避免組出 `sushify`、`unsushi`、`tsunamic` 等虛構詞。排除結果由 Step 7 **自動 append** 到 `.claude/skills/new-word/morpheme-flags.md`(skill 自家領域)。判定準則:**不屬印歐構詞體系 + 無真實英語派生詞** → 排除。**`dictionary/` 下任何 md 都不會被加入技術欄位** — 字典保持對老師可讀。詳見 Step 2.5。

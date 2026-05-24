@@ -8,9 +8,9 @@ description: 分析英文單字並建立雙向關聯的字典頁。觸發時機:
 當使用者請求 `/ingest <word>`(或要求分析、收錄某個英文單字)時,依照以下步驟執行。**所有檔案路徑都使用相對於專案根的 `dictionary/` 子樹**。
 
 ## 適用情境
-- 使用者輸入 `/ingest <word>` 或 `/ingest <word1> <word2> …`
-- 使用者說「幫我 ingest <word>」、「把 <word> 加入字典」、「分析這個單字」
-- 使用者貼出一個英文單字並要求收錄
+- 使用者輸入 `/ingest <word>`(單字)、`/ingest <word1> <word2> …`(多單字)、或 `/ingest <整段句子>`(整句,系統自動分詞 + 過濾 stopwords)
+- 使用者說「幫我 ingest <word>」、「把 <word> 加入字典」、「分析這個單字 / 這段話」
+- 使用者貼出一個英文單字或一段含多個生詞的句子並要求收錄
 
 ## 不適用情境
 - 使用者要查既有的單字 → 直接讀 `dictionary/words/<word>.md`
@@ -19,12 +19,39 @@ description: 分析英文單字並建立雙向關聯的字典頁。觸發時機:
 
 ---
 
-## Step 1 — 正規化輸入
+## Step 1 — 輸入分詞與過濾
 
-1. 把 `<word>` 轉成小寫、去除前後空白。
-2. 若包含空白(片語)或非英文字母字元,告知使用者目前只支援單一英文單字並停止。
+支援三種輸入形式,**統一以分詞流程處理**:
+- 單字:`/ingest international`
+- 多單字(空白分隔):`/ingest international cooperation success`
+- 整句(含標點與虛詞):`/ingest The international cooperation project was a success.`
 
-## Step 2 — 檢查 stopwords(**必做,不可略過**)
+### Step 1a — 分詞
+
+1. 把整段 `<input>` 轉小寫。
+2. 以**空白與標點符號**(半 / 全形 `.`、`,`、`;`、`:`、`!`、`?`、`"`、`'`、`(`、`)`、`[`、`]`、`{`、`}`、`—`、`–`、以及對應全形 `、`、`。`、`,`、`;`、`:`、`!`、`?`、`「`、`」` 等)為界,切成 token list。
+3. 過濾 token:
+   - 只保留**純英文字母**(全部由 `a`–`z` 組成、長度 ≥ 1)的 token。
+   - 丟棄純數字、純標點、空字串、含其他字元(如連字符 `t-shirt`、撇號 `don't`、混合 `5g` / `3d` 等),列為「跳過 非純英文字母」。
+4. 去重(同段輸入內重複的 token 只處理一次)。
+
+### Step 1b — Stopwords + 已存在過濾(取代單字模式原 Step 2 / Step 3)
+
+對 Step 1a 通過的每個 token,依序檢:
+
+1. **stopwords 檢查**:讀 `dictionary/stopwords.md`,解析 `## default` + `## custom`。token 在任一 section → 列為「跳過 stopword」,不進入 ingest 流程。
+2. **已存在檢查**:若 `dictionary/words/<token>.md` 已存在 → 列為「跳過 已存在」,不覆蓋。
+3. 其餘 token 進入**待處理清單**。
+
+### Step 1c — Dispatch
+
+- **待處理清單為空** → 回報「所有 token 都被過濾,無新單字可 ingest」(列出跳過原因),結束。
+- **單字模式**(清單剛好 1 個 token) → 對該 token 從 Step 4 起執行(可跳過 Step 2、Step 3,因為 Step 1b 已做)。
+- **批次模式**(清單 ≥ 2 個 token) → **按輸入順序**對每個 token 從 Step 4 起執行整套流程(含 Step 6 反向 link、Step 6.5 遞回中間單字、Step 7 更新 index、Step 8 append log)。
+  - **每個 token 進入 Step 4 之前,必須再做一次 Step 3 已存在檢查** — 因為前一 token 的 Step 6.5 遞回 ingest 可能已建檔(例如 batch 中先處理 `international` 時遞回建了 `national`、`nation`,後面若還有 `national` 在清單裡就會被跳過)。
+  - 各 token 的 Step 9 個別回報**合併**為一次彙整(見 Step 9 批次回報段),避免噪音。
+
+## Step 2 — 檢查 stopwords(**單字模式必做;批次模式已在 Step 1b 做過,可跳過**)
 
 1. 讀 `dictionary/stopwords.md`。
 2. 解析 `## default` 與 `## custom` 兩個 section 內的所有單字(每行一個,可能是 `- word` 列表或裸字)。
@@ -37,7 +64,28 @@ description: 分析英文單字並建立雙向關聯的字典頁。觸發時機:
 
 1. 若 `dictionary/words/<word>.md` 已存在,告知使用者該字已收錄,並詢問是否要覆蓋。若使用者未要求覆蓋就停止。
 
+> **批次模式注意**:Step 1b 已做過一次初檢;**每個 token 在進入 Step 4 前還要再做一次本檢查**(可能被前一 token 的遞回 ingest 建檔),已存在 → 靜默跳過(不再問是否覆蓋,直接列入「跳過 已存在」清單)。
+
 ## Step 4 — 嚴格詞源學語素拆解
+
+### Step 4a — Loanword 判定(優先,做拆解前先做)
+
+在 morpheme 拆解之前,先判定 `<word>` 是否為**單純的外來語整字借詞**(monomorphemic loanword)。判定準則(**三條同時滿足才算**):
+
+1. **不屬印歐語系構詞體系**:來源語為日文、漢語、韓文、阿拉伯文、梵文、太平洋諸島語、美洲原住民語等非印歐語系。羅曼語族(西班牙、義大利、葡萄牙)借詞**通常仍可拆**,因共享拉丁根。
+2. **在英語中不參與構詞**:無真實派生詞(沒人說 sushify、karaokeize、tsunamic、tacoal、yogaic)。整字進英語後不長新枝。
+3. **單一不可分 morpheme**:英語層級拆不出 prefix / suffix。
+
+典型 loanword:`sushi`、`karaoke`、`tsunami`、`karma`、`yoga`、`kimono`、`taco`、`kowtow`、`ninja`、`samurai`、`zen`、`feng-shui`、`tofu`、`origami`。
+
+**若判定為 loanword**:不做拆解,**標記為 loanword**,直接跳到 Step 5(Step 5 / 6 / 7 / 8 均有 loanword 分支)。**Step 6 整段跳過**(不建 root 頁、不進 morpheme 池)。
+
+**反例**(這些字看似外來但**不**是 loanword):
+- `television`:混希臘 `tele-` + 拉丁 `vis`,兩部分都是英語構詞活躍 morpheme → 正常拆。
+- `happy`:英語原生自由詞素,**有衍生力**(unhappy、happily、happiness、happier) → 正常進 root 池,不算 loanword。
+- `restaurant`:來自法語,但 `-ant` 是活躍 suffix → 拆 `restaur` + `-ant`。
+
+### Step 4b — 一般 morpheme 拆解(僅非 loanword)
 
 **核心原則:遞迴拆解到「無法再分離出有意義的詞源學 morpheme」為止。**「教學字根」(teaching root,如 nation、action、formation)**不算最底層 root**,要繼續拆。
 
@@ -56,10 +104,14 @@ description: 分析英文單字並建立雙向關聯的字典頁。觸發時機:
 | `national` | root `nat`、suffix `-ion`、suffix `-al` |
 | `nation` | root `nat`、suffix `-ion` |
 | `action` | root `act`、suffix `-ion` |
-| `formation` | root `form`、suffix `-at`(或併入 `-ation`)、suffix `-ion` |
-| `happy` | root `happy`(自由詞素,無法再拆) |
+| `formation` | root `form`、suffix `-at`、suffix `-ion`(拆到最小單位,不寫 `-ation`) |
+| `happy` | root `happy`(英語原生自由詞素,有衍生力 unhappy/happily) |
+| `sushi` | **(loanword)** 不拆,只進 words,不建 root 頁 |
+| `tsunami` | **(loanword)** 不拆,只進 words,不建 root 頁 |
 
 > 注意:`nation`、`national` 等「教學字根」雖然在許多英文教材中被當 root,但本專案採嚴格詞源學派,必須繼續拆。若有疑問請朝詞源學派(拆到最底層)選擇。
+
+> **複合字尾偏好拆到最小單位**:語言學上的複合字尾(`-ation = -ate + -ion`、`-tional = -tion + -al`、`-ically = -ic + -al + -ly`、`-ization = -ize + -ation`)在本專案**一律拆到最小**,不以複合形式進池。原因:`new-word` 走嚴格字面比對,池中若有複合字尾會誘發混淆與非法組裝。例外:若某複合字尾在現代英語已無法清楚分離成有意義的兩塊(視為單一不可分原子),才以複合形式列入,並在拆解時明文標注。
 
 ### 輸出資料結構
 
@@ -117,6 +169,8 @@ added: <YYYY-MM-DD>
 
 ## 記憶法
 <1–3 句中文記憶法,結合語素或意象>
+
+## 筆記區
 ```
 
 ### 具體範例:international
@@ -146,12 +200,14 @@ added: 2026-05-14
 
 ## 記憶法
 …
+
+## 筆記區
 ```
 
 ### 規則
 - **拆解行的順序**必須符合單字實際拼寫(由左到右):`international` 寫成 `inter- + nat + -ion + -al`,不可亂序。
 - 若某類語素不存在,**該行(們)整行省略**(不要寫「無」)。
-- root 一定要有一行。
+- root 一定要有一行(**loanword 除外**,見下面「Loanword 變體模板」)。
 - prefix / suffix 可以 0 行或多行,每多一個就多一行。
 - **wiki-link 路徑用 morpheme key(帶連字號)**:`[[../prefix/inter-]]`、`[[../suffix/-al]]`、`[[../root/nat]]`。**除非舊檔已存在**(見上面「向後相容」),否則一律用 key。
 - **link 後 inline code 顯示 key 本身**(`` `inter-` ``、`` `-al` ``、`` `nat` ``),內容與 wiki-link 結尾一致。
@@ -159,6 +215,27 @@ added: 2026-05-14
 - 中文用繁體中文(zh-TW)。
 - `added` 用當天日期,格式 `YYYY-MM-DD`。
 - wiki-link 一律使用相對路徑 `[[../prefix/<key>]]`、`[[../root/<key>]]`、`[[../suffix/<key>]]`,不加 `.md`。
+- **`## 筆記區` 是 user 個人筆記區**:模板留空 section(只有標題行,內容空),供 user 自行填寫。**ingest / new-word 一律不寫入內容,只建立空 section**。即使 LLM 心癢想加例句也禁止 — 這是 user 的領域。
+
+### Loanword 變體模板
+
+對 Step 4a 判定為 loanword 的字,**word md 的 `## 拆解` section 改寫成單一說明行**,其餘 section 與 frontmatter 格式一如平常:
+
+```markdown
+## 拆解
+- 整字借詞: 源自<語言> <原字>,無英語構詞拆解
+```
+
+例(sushi):
+
+```markdown
+## 拆解
+- 整字借詞: 源自日文 寿司(sushi),無英語構詞拆解
+```
+
+- **不要**寫 `字根: [[../root/sushi]]` 之類的 wiki-link(因為 root 頁不該存在)。
+- `## 詞源` 段可說明借入英語的時間、原意演變,但不寫拉丁 / 希臘 morpheme 推演。
+- `## 記憶法` / `## 筆記區` 一如平常。
 
 ### 詞性縮寫對照表
 
@@ -184,6 +261,8 @@ frontmatter 的 `pos` 與正文 `**詞性**:` 必須用以下縮寫(有句點),*
 多詞性以 `; ` 分隔:`n.; v.`、`adj.; adv.`。若一個動詞既及物又不及物,可寫 `vt.; vi.` 或統一寫 `v.`。
 
 ## Step 6 — 建立 / 更新語素頁(**雙向 link 的反向端**)
+
+> **若 Step 4a 判定為 loanword,整個 Step 6 跳過** — 不建 root / prefix / suffix 頁,不更新任何 morpheme 頁的反向 link。直接進 Step 7。
 
 對 Step 4 拆出的每個語素,依「向後相容」一節決定要用新 key 還是舊 key 引用,並操作對應檔案:
 
@@ -266,6 +345,7 @@ meaning: <zh-TW meaning>
 
 2. 在 `## Words` section 加入 `- [[words/<word>]] — <一句 zh-TW 說明>`,維持字母排序、去重。**對 Step 6.5 遞回 ingest 的每個中間單字,同樣加入。**
 3. 對 Step 6 中**新建**的語素頁,也分別在 `## Prefix` / `## Root` / `## Suffix` 加入 `- [[<type>/<key>]] — <一句 zh-TW 說明>`(`<key>` 帶連字號)。**僅新建時加,既有頁面不重複加。**
+4. **Loanword 例外**:若主單字為 loanword,仍要在 `## Words` 加入它(它確實是 word),但**不要**在 `## Root` / `## Prefix` / `## Suffix` 加入任何條目(因為 Step 6 整段跳過,沒新建語素頁)。
 
 ## Step 8 — Append `dictionary/log.md`
 
@@ -285,14 +365,31 @@ meaning: <zh-TW meaning>
 
    - 多個 prefix / suffix 以逗號分隔。
    - 缺少的語素類別整段欄位省略(例:無 prefix 就不寫 `prefix=` 欄位)。
+   - **Loanword 變體**:格式改為 `- <YYYY-MM-DD> ingest <word> (loanword, no morpheme)`。
 
 ## Step 9 — 回報
+
+### 單字模式回報
 
 告訴使用者:
 - 本次主單字拆解結果(列出所有 prefix / root / suffix)。
 - 哪些中間單字被遞回 ingest(列出單字名)。
 - 建立了哪些新檔案。
 - 更新了哪些既有檔案(尤其是反向 link 與 index)。
+
+### 批次模式回報(若 Step 1c 走批次)
+
+**統一彙整一次**,不要逐 token 列完整詳情(會炸 context):
+
+- **輸入分詞**:原始 token 數 N(去重後)
+- **跳過 非純英文字母**:`[don't, t-shirt, 5g, ...]`(J 個)
+- **跳過 stopword**:`[the, was, a, project, ...]`(M 個,標明 default / custom)
+- **跳過 已存在**:`[<word1>, <word2>, ...]`(K 個,**含 batch 中因前一 token 遞回 ingest 而成為「已存在」的**)
+- **實際 ingest**:每個一行,簡短拆解 + 中間單字:
+  ```
+  <word> — prefix=<m1>,<m2>, root=<m3>, suffix=<m4>,<m5> [中間單字: <w1>, <w2>]
+  ```
+- **建檔統計**:words md X 個、morpheme md Y 個、index/log 更新 ✓
 
 ---
 
@@ -312,3 +409,5 @@ meaning: <zh-TW meaning>
 8. 不要建立 `.claude/commands/` 任何檔案 — 全部走 skill 路線。
 9. 不要更動 `dictionary/stopwords.md`(那是 stopword skill 的職責)。
 10. 不要刪除既有檔案的內容,只能追加或在指定 section 內插入。
+11. **Loanword 不進 morpheme 池**:單純的外來語整字借詞(`sushi`、`karaoke`、`tsunami`、`taco`、`yoga` 等)只進 `dictionary/words/`,**絕不建立 `dictionary/root/`、`dictionary/prefix/`、`dictionary/suffix/` 頁**。避免 `new-word` skill 從中組出虛構派生詞(如 sushify、unsushi、tsunamic)。判定準則見 Step 4a。
+12. **批次 / 整句 ingest 支援**:Step 1 自動分詞 + Step 1b 過濾(stopwords / 已存在 / 非純英文字母),Step 1c dispatch 為單字模式或批次模式。批次模式按輸入順序逐字 ingest,中間單字的反向 link 與遞回 ingest 自動由 Step 6.5 處理,結束後 Step 9 統一彙整回報。連字符字(`t-shirt`、`e-mail`)、撇號縮寫(`don't`)、含數字 token(`5g`、`3d`)在 Step 1a 全被丟棄 — 目前不支援,屬已知 edge case。
