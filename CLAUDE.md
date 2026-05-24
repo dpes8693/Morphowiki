@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**en-llm-wiki**:Karpathy 風英文單字 wiki + SM-2 本地複習網頁,由五個 Claude Code skill 維護,資料全留本機。
+**morphowiki**:Karpathy 風英文單字 wiki + SM-2 本地複習網頁,由五個 Claude Code skill 維護,資料全留本機。
 
 ## 必知地雷
 - **`/init` 是 Claude Code 內建 skill**(生成 CLAUDE.md)。本專案初始化用 **`/setup`**

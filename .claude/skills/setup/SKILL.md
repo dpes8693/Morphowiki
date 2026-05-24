@@ -1,11 +1,11 @@
 ---
 name: setup
-description: 初始化 en-llm-wiki 專案結構。檢查 Node.js 是否安裝、巢狀建立 dictionary/{prefix,root,suffix,words} 與 review/{server.js,web/*}、預設生成 ~150 個英文功能字寫入 stopwords.md 的 ## default section、預先 npm install。觸發時機:使用者輸入「/setup」、「初始化專案」、「第一次設定 en-llm-wiki」、或在空資料夾要求設定 en-llm-wiki。注意:不要與 Claude Code 內建的 /init(生成 CLAUDE.md)混淆。
+description: 初始化 morphowiki 專案結構。檢查 Node.js 是否安裝、巢狀建立 dictionary/{prefix,root,suffix,words} 與 review/{server.js,web/*}、預設生成 ~150 個英文功能字寫入 stopwords.md 的 ## default section、預先 npm install。觸發時機:使用者輸入「/setup」、「初始化專案」、「第一次設定 morphowiki」、或在空資料夾要求設定 morphowiki。注意:不要與 Claude Code 內建的 /init(生成 CLAUDE.md)混淆。
 ---
 
 # Setup Skill
 
-當使用者請求 `/setup`(或「初始化專案」、「第一次設定」、「幫我把資料夾結構建好」)時,依以下步驟執行。本 skill 把 en-llm-wiki 的目錄結構與必要檔案一次到位。
+當使用者請求 `/setup`(或「初始化專案」、「第一次設定」、「幫我把資料夾結構建好」)時,依以下步驟執行。本 skill 把 morphowiki 的目錄結構與必要檔案一次到位。
 
 ---
 
@@ -59,7 +59,7 @@ review/web/
 | `dictionary/index.md` | `# Dictionary Index\n\n_自動維護的目錄。新單字、字首、字根、字尾會被 ingest skill 加進對應 section。_\n\n## Words\n\n## Prefix\n\n## Root\n\n## Suffix\n` |
 | `dictionary/log.md` | `# Log\n\n_Append-only 操作紀錄,格式: - YYYY-MM-DD &lt;action&gt; &lt;target&gt;_\n` |
 | `review/flashcards.json` | `{\n  "version": 1,\n  "cards": []\n}\n` |
-| `review/package.json` | 若已存在則跳過。若無,寫入最小版:`{ "name": "en-llm-wiki-review", "version": "0.1.0", "private": true, "scripts": { "start": "node server.js" }, "dependencies": { "express": "^4.19.2" } }` |
+| `review/package.json` | 若已存在則跳過。若無,寫入最小版:`{ "name": "morphowiki-review", "version": "0.1.0", "private": true, "scripts": { "start": "node server.js" }, "dependencies": { "express": "^4.19.2" } }` |
 
 UTF-8 無 BOM、LF 換行。
 
