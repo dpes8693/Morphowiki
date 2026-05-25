@@ -21,9 +21,9 @@
 1. 用 Claude Code 開啟此資料夾,六個 skill 自動載入
 2. `/setup` — 第一次使用先跑;之後可省略
 3. `/ingest unbelievable` — 看 `dictionary/` 自動長出單字頁與反向關聯
-4. `/new-word 3` — 用現有字根快速擴庫,一次生 3 個字
-5. `/flashcard unbelievable` — 加進複習庫
-6. `/review-word` — 瀏覽器打開 http://localhost:5173 複習
+4. `/flashcard unbelievable` — 加進複習庫
+5. `/review-word` — 瀏覽器打開 http://localhost:5173 複習
+6. `/new-word 3` — 用現有字根快速擴庫,一次生 3 個字
 
 ## 一次處理多個字(空白分隔 / 整句)
 

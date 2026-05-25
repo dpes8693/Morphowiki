@@ -21,9 +21,9 @@ Inspired by Andrej Karpathy's LLM Wiki — a **private, local-first** English vo
 1. Open this folder in Claude Code — the seven skills load automatically
 2. `/setup` — run on first use; skip afterwards
 3. `/ingest unbelievable` — watch `dictionary/` grow word pages and backlinks
-4. `/new-word 3` — quickly expand the pool from existing morphemes, three at a time
-5. `/flashcard unbelievable` — add it to the review deck
-6. `/review-word` — open http://localhost:5173 in the browser to review
+4. `/flashcard unbelievable` — add it to the review deck
+5. `/review-word` — open http://localhost:5173 in the browser to review
+6. `/new-word 3` — quickly expand the pool from existing morphemes, three at a time
 
 ## Batch input (whitespace-separated / full sentence)
 
